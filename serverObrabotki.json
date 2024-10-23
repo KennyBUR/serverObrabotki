@@ -1,0 +1,52 @@
+from fastapi import FastAPI, Request
+import hmac
+import hashlib
+import requests
+import json
+from pydantic import BaseModel
+
+app = FastAPI()
+
+# Ваши API ключи BingX
+API_KEY = 'd2MheMZv9KFnAE9NpDkYBHeLp6mEyHY6iNrkyscDJZDTiXUDh7HuzlVHRvQwg3MzypXMhkUJdvsKAAECRw'
+API_SECRET = 'uwQVXmRGeImaqjIbG7ioSTFlKzrpUUwLJIxUocH90gNbxoOzrjIcICvkK1zo9l2C88QJcN8MZBqB72OB9uj9rg'
+
+# Функция для отправки запросов на BingX
+def send_order_to_bingx(symbol: str, side: str, quantity: float, price: float = None):
+    url = "https://api.bingx.com/v1/spot/order"
+    headers = {
+        'X-BingX-APIKey': API_KEY
+    }
+    data = {
+        'symbol': symbol,
+        'side': side,
+        'type': 'MARKET',
+        'quantity': quantity
+    }
+    if price:
+        data['price'] = price
+        data['type'] = 'LIMIT'
+
+    # Подпись запроса с использованием секретного ключа
+    signature = hmac.new(API_SECRET.encode(), json.dumps(data).encode(), hashlib.sha256).hexdigest()
+    data['signature'] = signature
+
+    response = requests.post(url, headers=headers, data=data)
+    return response.json()
+
+# Модель данных для webhook
+class WebhookPayload(BaseModel):
+    message: str
+
+# Обработка сигналов от TradingView
+@app.post("/webhook")
+async def webhook(payload: WebhookPayload):
+    data = payload.dict()
+    if 'Buy' in data['message']:
+        # Передаем сигнал на покупку
+        response = send_order_to_bingx('BTCUSDT', 'BUY', 0.001)  # Пример
+    elif 'Sell' in data['message']:
+        # Передаем сигнал на продажу
+        response = send_order_to_bingx('BTCUSDT', 'SELL', 0.001)
+    
+    return response
